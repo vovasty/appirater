@@ -38,13 +38,18 @@
 #import <SystemConfiguration/SCNetworkReachability.h>
 #include <netinet/in.h>
 
-NSString *const kAppiraterFirstUseDate				= @"kAppiraterFirstUseDate";
-NSString *const kAppiraterUseCount					= @"kAppiraterUseCount";
-NSString *const kAppiraterSignificantEventCount		= @"kAppiraterSignificantEventCount";
-NSString *const kAppiraterCurrentVersion			= @"kAppiraterCurrentVersion";
-NSString *const kAppiraterRatedCurrentVersion		= @"kAppiraterRatedCurrentVersion";
-NSString *const kAppiraterDeclinedToRate			= @"kAppiraterDeclinedToRate";
-NSString *const kAppiraterReminderRequestDate		= @"kAppiraterReminderRequestDate";
+NSString *const kAppiraterFirstUseDate                  = @"kAppiraterFirstUseDate";
+NSString *const kAppiraterUseCount                      = @"kAppiraterUseCount";
+NSString *const kAppiraterSignificantEventCount         = @"kAppiraterSignificantEventCount";
+NSString *const kAppiraterCurrentVersion                = @"kAppiraterCurrentVersion";
+NSString *const kAppiraterRatedCurrentVersion           = @"kAppiraterRatedCurrentVersion";
+NSString *const kAppiraterDeclinedToRate                = @"kAppiraterDeclinedToRate";
+NSString *const kAppiraterReminderRequestDate           = @"kAppiraterReminderRequestDate";
+NSString *const kAppiraterDefaultsAppId                 = @"kAppiraterDefaultsAppId";
+NSString *const kAppiraterDefaultsDaysUntilPrompt       = @"kAppiraterDefaultsDaysUntilPrompt";
+NSString *const kAppiraterDefaultsUsesUntilPrompt       = @"kAppiraterDefaultsUsesUntilPrompt";
+NSString *const kAppiraterDefaultsSigEventsUntilPrompt  = @"kAppiraterDefaultsSigEventsUntilPrompt";
+NSString *const kAppiraterDefaultsTimesBeforeReminding  = @"kAppiraterDefaultsTimesBeforeReminding";
 
 NSString *templateReviewURL = @"itms-apps://ax.itunes.apple.com/WebObjects/MZStore.woa/wa/viewContentsUserReviews?type=Purple+Software&id=APP_ID";
 
@@ -60,6 +65,40 @@ NSString *templateReviewURL = @"itms-apps://ax.itunes.apple.com/WebObjects/MZSto
 @implementation Appirater 
 
 @synthesize ratingAlert;
+
++ (NSString*) appId
+{
+    NSString* value = [[[NSBundle mainBundle] infoDictionary] objectForKey:kAppiraterDefaultsAppId];
+    NSAssert1(value, @"Error - you have not specified %@ property in your info.plist", kAppiraterDefaultsAppId);
+    return value;
+}
+
+- (id) assertedValueFromDefaults:(NSString*) key
+{
+    NSObject* value = [[[NSBundle mainBundle] infoDictionary] objectForKey:key];
+    NSAssert1(value, @"Error - you have not specified %@ property in your info.plist", key);
+    return value;
+}
+
+- (CGFloat) daysUntilPrompt
+{
+    return [[self assertedValueFromDefaults:kAppiraterDefaultsDaysUntilPrompt] doubleValue];
+}
+
+- (NSUInteger) usesUntilPrompt
+{
+    return [[self assertedValueFromDefaults:kAppiraterDefaultsUsesUntilPrompt] integerValue];
+}
+
+- (NSInteger) sigEventsUntilPrompt
+{
+    return [[self assertedValueFromDefaults:kAppiraterDefaultsSigEventsUntilPrompt] integerValue];
+}
+
+- (CGFloat) timesBeforeReminding
+{
+    return [[self assertedValueFromDefaults:kAppiraterDefaultsTimesBeforeReminding] doubleValue];
+}
 
 - (BOOL)connectedToNetwork {
     // Create zero addy
@@ -125,18 +164,18 @@ NSString *templateReviewURL = @"itms-apps://ax.itunes.apple.com/WebObjects/MZSto
 	
 	NSDate *dateOfFirstLaunch = [NSDate dateWithTimeIntervalSince1970:[userDefaults doubleForKey:kAppiraterFirstUseDate]];
 	NSTimeInterval timeSinceFirstLaunch = [[NSDate date] timeIntervalSinceDate:dateOfFirstLaunch];
-	NSTimeInterval timeUntilRate = 60 * 60 * 24 * APPIRATER_DAYS_UNTIL_PROMPT;
+	NSTimeInterval timeUntilRate = 60 * 60 * 24 * [self daysUntilPrompt];
 	if (timeSinceFirstLaunch < timeUntilRate)
 		return NO;
 	
 	// check if the app has been used enough
 	int useCount = [userDefaults integerForKey:kAppiraterUseCount];
-	if (useCount <= APPIRATER_USES_UNTIL_PROMPT)
+	if (useCount <= [self usesUntilPrompt])
 		return NO;
 	
 	// check if the user has done enough significant events
 	int sigEventCount = [userDefaults integerForKey:kAppiraterSignificantEventCount];
-	if (sigEventCount <= APPIRATER_SIG_EVENTS_UNTIL_PROMPT)
+	if (sigEventCount <= [self sigEventsUntilPrompt])
 		return NO;
 	
 	// has the user previously declined to rate this version of the app?
@@ -150,7 +189,7 @@ NSString *templateReviewURL = @"itms-apps://ax.itunes.apple.com/WebObjects/MZSto
 	// if the user wanted to be reminded later, has enough time passed?
 	NSDate *reminderRequestDate = [NSDate dateWithTimeIntervalSince1970:[userDefaults doubleForKey:kAppiraterReminderRequestDate]];
 	NSTimeInterval timeSinceReminderRequest = [[NSDate date] timeIntervalSinceDate:reminderRequestDate];
-	NSTimeInterval timeUntilReminder = 60 * 60 * 24 * APPIRATER_TIME_BEFORE_REMINDING;
+	NSTimeInterval timeUntilReminder = 60 * 60 * 24 * [self timesBeforeReminding];
 	if (timeSinceReminderRequest < timeUntilReminder)
 		return NO;
 	
@@ -325,7 +364,7 @@ NSString *templateReviewURL = @"itms-apps://ax.itunes.apple.com/WebObjects/MZSto
 	NSLog(@"APPIRATER NOTE: iTunes App Store is not supported on the iOS simulator. Unable to open App Store page.");
 #else
 	NSUserDefaults *userDefaults = [NSUserDefaults standardUserDefaults];
-	NSString *reviewURL = [templateReviewURL stringByReplacingOccurrencesOfString:@"APP_ID" withString:[NSString stringWithFormat:@"%d", APPIRATER_APP_ID]];
+	NSString *reviewURL = [templateReviewURL stringByReplacingOccurrencesOfString:@"APP_ID" withString:[NSString stringWithFormat:@"%@", [Appirater appId]]];
 	[userDefaults setBool:YES forKey:kAppiraterRatedCurrentVersion];
 	[userDefaults synchronize];
 	[[UIApplication sharedApplication] openURL:[NSURL URLWithString:reviewURL]];
